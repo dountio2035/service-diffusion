@@ -13,11 +13,11 @@ var diffusionSchema = new mongoose.Schema({
     users: [{ type: String }],
     projectionID: {
         type: String,
-        // required: true,
+        required: true,
     },
     duration: {
         type: Number,
-        // required: true,
+        required: true,
     },
     status: {
         type: String,

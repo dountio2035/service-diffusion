@@ -2,7 +2,7 @@ const { exec } = require('child_process');
 const fs = require('fs');
 require('process');
 const axios = require('axios');
-// const schedule = require('node-schedule');
+const schedule = require('node-schedule');
 const Diffusion = require('../../Model/Diffusion');
 const STATUS_DIFFUSION = require('../Status/diffusion');
 
@@ -11,80 +11,43 @@ module.exports = DiffusionController = {
     // this methode return nothing as response but can be modified to publish event on a broker
     createDiffusion: async function (req, res) {
 
-        // const user_id = req.params.user_id;
-        // const projection_id = req.params.projection_id;
+        const user_id = req.params.user_id;
 
-        // let isAdmin = false;
-        // let projection;
+        let isAdmin = false;
+        let projection;
         // verifiy if the user exist an he is an admin
-        // await axios.get(`${process.env.GATEWAY}/USER-SERVICE/user?is_admin=${user_id}`).then(res => {
-        //     isAdmin = res.data.is_admin;
-        // }).catch((error) => console.log(error)
-        // );
+        await axios.get(`${process.env.GATEWAY}/user/user?is_admin=${user_id}`).then(res => {
+            isAdmin = res.data.is_admin;
+        }).catch((error) => console.log(error)
+        );
 
-        if (true) {
-            // await axios.get(`${process.env.GATEWAY}/PROJECTION-SERVICE/projection/${projection_id}`).then(res => {
-            //     projection = res.data.projection;
-            // }).catch((error) => console.log(error)
-            // );
-
-            // if the projection exist
-            // if (projection == null) {
-            //     res.status(404).json({ 'message': `La projection avec id =${projection_id} n'existe pas` });
-            // }
-
+        if (isAdmin) {
+            // get projection from middle[projection]
+            projection = res.projection;
             // get projection date to excute this job 10min befor the geven date and hour
-            // const projectionDate = new Date(projection.date).toUTCString();
-            // const cronJobDate = new Date(new Date(projectionDate).getTime() - 10 * 60 * 1000);
+            const projectionDate = new Date(projection.date).toUTCString();
+            const cronJobDate = new Date(new Date(projectionDate).getTime() - 10 * 60 * 1000);
 
             // cron job
-            const streamableVideoURL = DiffusionController.converVideoForStreaming('C:/ffmpeg/1.mp4', '809');
-            // const streamableVideoURL = DiffusionController.converVideoForStreaming(projection.film_url, projection_id);
+            DiffusionController.converVideoForStreaming(projection.film.video, projection.id);
 
-            const diffusion = new Diffusion({
-                streamUrl: streamableVideoURL,
-                streamableAt: new Date('07/05/2025 01:30:50'),
-                // projectionID: projection_id,
-            });
-            try {
-                const newDiffusion = await diffusion.save();
-                console.log
-                    ({
-                        'message': 'salle de diffusion cree',
-                        'diffusion': newDiffusion,
-                    });
-            } catch (error) {
-
-                console.log({
-                    'message': error.message,
-                })
-            }
             // const job = schedule.scheduleJob(cronJobDate, async () => { })
+        } else {
+            // none admin
+            res.status(403).json({ 'message': `Cette action n'est pas authoriser(Role d'administration requis)` });
         }
 
-        // none admin
-        res.status(403).json({ 'message': `Cette action n'est pas authoriser(Role d'administration requis)` });
     },
 
-    start: function (req, res) {
 
-        const user_id = req.params.userid;
-        const diff_id = req.params.diffid;
-
-        return res.json({
-            'uid': user_id,
-            'did': diff_id,
-            'can_procide': true,
-        });
-    },
     // convert the uploaded video by the project service
-    converVideoForStreaming: function (videoUri, event_id) {
+    converVideoForStreaming: async function (videoUri, event_id) {
 
         const uploadFolder = 'upload/events/room/' + event_id;
 
-        const lowBitrate = ``;
-        const middleBitrate = ``;
-        const highBitrate = ``;
+        // const lowBitrate = ``;
+        // const middleBitrate = ``;
+        // const highBitrate = ``;
 
         // create event folder
         if (!fs.existsSync(uploadFolder)) {
@@ -102,8 +65,30 @@ module.exports = DiffusionController = {
             console.log(stderr);
 
         });
-        return `${process.env.SERVER}/${uploadFolder}/index.m3u8`;
+
+        // create new diffusion
+        const diffusion = new Diffusion({
+            streamUrl: `${process.env.SERVER}/${uploadFolder}/index.m3u8`,
+            streamableAt: new Date(projection.dateDiff),
+            projectionID: projection_id,
+            duration: projection.duration,
+        });
+        // save diffusion
+        try {
+            const newDiffusion = await diffusion.save();
+            console.log
+                ({
+                    'message': 'salle de diffusion cree',
+                    'diffusion': newDiffusion,
+                });
+        } catch (error) {
+
+            console.log({
+                'message': error.message,
+            })
+        }
     },
+
     // add user for an existing event(diffusion)
     addUserToDiffusion: async (req, res) => {
 
@@ -113,33 +98,40 @@ module.exports = DiffusionController = {
         let ticket;
 
         // verifiy if the user pay ticket
-        await axios.get(`${process.env.GATEWAY}/TICKET-SERVICE/ticket/${projection_id}/${user_id}`).then(res => {
+        await axios.get(`${process.env.GATEWAY}/ticket/${projection_id}/${user_id}`).then(res => {
             ticket = res.data.ticket;
         }).catch((error) => console.log(error)
         );
 
 
-        if (ticket != null) {
+        if (ticket != null && ticket.user_id === user_id) {
             let oldDiff = await Diffusion.findOne({ projectionID: projection_id });
-            oldDiff.users.push(ticket.user_id);
-            oldDiff.save();
+            if (oldDiff != null) {
+                oldDiff.users.push(ticket.user_id);
+                await oldDiff.save();
 
-            res.status(404).json({
-                'message': `L'utilisateur a ete ajouté`,
-                'date_diffusion': `${oldDiff.streamableAt}`,
-            });
+                res.status(200).json({
+                    'message': `User added successfuly`,
+                    'diffusion_date': `${oldDiff.streamableAt}`,
+                });
+            } else {
+                res.status(404).json({
+                    'message': `Projection with id ${projection_id} don't existe`,
+                });
+            }
         }
 
         res.status(404).json({
-            'message': 'Cet utlisateur doit souscrire a l\'evenement.'
+            'message': 'subscription_require'
         });
     },
+
+
     // join diffusion
     joinRoom: async (req, res) => {
 
-        // const user_id = req.params.userid;
+        const user_id = req.params.userid;
         const diff_id = req.params.diffid;
-
 
         const theRoom = await Diffusion.findOne({
             _id: diff_id,
@@ -151,21 +143,23 @@ module.exports = DiffusionController = {
             });
         }
 
-        // if (theRoom.users.find(user_id) == null) {
-        //     res.ok().json({
-        //         'message': `Cet utilisateur n'appartient a aucune diffusion avec id${diff_id}`
-        //     });
-        // }
-        // if (theRoom.status != 'LIVE') {
-        //     res.status(301).json({
-        //         'message': `${STATUS_DIFFUSION.keyoff(theRoom.status)}`,
-        //         'status': `${theRoom.status}`,
-        //     });
-        // }
-        const today = new Date(new Date()).getTime();
-        const dayToStartEvent = new Date(theRoom.streamableAt).getTime();
-        // const dayToStartEvent = new Date(theRoom.streamableAt).getTime();
-        const duration = 1413;
+        if (theRoom.users.find(user_id) == null) {
+            res.status(404).json({
+                'message': `subscription_require`
+            });
+        }
+
+        if (theRoom.status != 'LIVE') {
+            res.status(301).json({
+                'message': `${STATUS_DIFFUSION.keyoff(theRoom.status)}`,
+                'status': `${theRoom.status}`,
+            });
+        }
+
+        const today = new Date().getTime();
+        const dayToStartEvent = theRoom.streamableAt.getTime();
+
+        const duration = theRoom.duration;
         const delay = (today - dayToStartEvent) / 1000;
 
         const segmentDuration = 10;
@@ -175,29 +169,28 @@ module.exports = DiffusionController = {
         // segments
         const segments = []
         for (let i = actualSegmentNumber; i < totalNumberOfSegment; ++i) {
-            segments.push(`http://localhost:3001/upload/events/room/809/segment${i}.ts`)
+            segments.push(`http://localhost:3001/upload/events/room/${theRoom.projectionID}/segment${i}.ts`)
         }
 
-        // #EXTINF:11.166667,
-        // segment000.ts
-        // #EXTINF:1379.600000,
-        // segment001.ts
-        // #EXTINF:22.366667,
-        // segment002.ts
-        // #EXT-X-ENDLIST
-        const userStreamData = `#EXTM3U
-                                #EXT-X-VERSION:3
-                                #EXT-X-TARGETDURATION:${duration}
-                                #EXT-X-MEDIA-SEQUENCE:${actualSegmentNumber}
+        const userStreamData = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:${duration}\n#EXT-X-MEDIA-SEQUENCE:${actualSegmentNumber}\n
                                 ${segments.map(seg =>
             `#EXTINF:${segmentDuration},\n${seg}`
-        ).join('\n')}
-                                `;
+        ).join('\n')}#EXT-X-ENDLIST`;
 
+        // create user streamable m3u8 file corresponding
+        const user_file = `upload/events/room/${theRoom.projectionID}/${user_id}.m3u8`;
+        fs.mkdirSync(user_file, { recursive: true });
+
+        exec(`echo ${userStreamData} > ${user_file}`, (error, _stdout, _stderr) => {
+            if (error) {
+                console.log('error occured ' + error.message);
+            }
+
+        });
         res.set('Content-Type', 'application/x-mpegURL');
-        res.status(301).json({
+        res.status(200).json({
             'message': `${STATUS_DIFFUSION.LIVE}`,
-            'data': `${userStreamData}`,
+            'data': `${user_file}`,
             'status': `${theRoom.status}`,
         });
 
