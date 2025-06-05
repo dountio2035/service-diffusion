@@ -54,39 +54,40 @@ module.exports = DiffusionController = {
             fs.mkdirSync(uploadFolder, { recursive: true });
         }
 
-        const ffmpegCommand = `ffmpeg -i ${videoUri} -codec:v h264 -codec:a aac -f hls -hls_time 10 -hls_segment_filename "${uploadFolder}/segment%03d.ts" -start_number 0 ${uploadFolder + '/index.m3u8'}`;
+        const ffmpegCommand = `ffmpeg -i ${videoUri} -codec:v libx264 -codec:a aac -f hls -hls_time 7 -hls_segment_filename "${uploadFolder}/segment%05d.ts" -start_number 0 ${uploadFolder + '/index.m3u8'}`;
 
-        exec(ffmpegCommand, (error, stdout, stderr) => {
+        exec(ffmpegCommand, (error, _stdout, _stderr) => {
             if (error) {
                 console.log('error occured ' + error.message);
 
+            } else {
+                console.log("ok");
+
             }
-            console.log(stdout);
-            console.log(stderr);
 
         });
-
+        return true;
         // create new diffusion
-        const diffusion = new Diffusion({
-            streamUrl: `${process.env.SERVER}/${uploadFolder}/index.m3u8`,
-            streamableAt: new Date(projection.dateDiff),
-            projectionID: projection_id,
-            duration: projection.duration,
-        });
+        // const diffusion = new Diffusion({
+        //     streamUrl: `${process.env.SERVER}/${uploadFolder}/index.m3u8`,
+        //     streamableAt: new Date(projection.dateDiff),
+        //     projectionID: projection_id,
+        //     duration: projection.duration,
+        // });
         // save diffusion
-        try {
-            const newDiffusion = await diffusion.save();
-            console.log
-                ({
-                    'message': 'salle de diffusion cree',
-                    'diffusion': newDiffusion,
-                });
-        } catch (error) {
+        // try {
+        //     const newDiffusion = await diffusion.save();
+        //     console.log
+        //         ({
+        //             'message': 'salle de diffusion cree',
+        //             'diffusion': newDiffusion,
+        //         });
+        // } catch (error) {
 
-            console.log({
-                'message': error.message,
-            })
-        }
+        //     console.log({
+        //         'message': error.message,
+        //     })
+        // }
     },
 
     // add user for an existing event(diffusion)
@@ -169,13 +170,12 @@ module.exports = DiffusionController = {
         // segments
         const segments = []
         for (let i = actualSegmentNumber; i < totalNumberOfSegment; ++i) {
-            segments.push(`http://localhost:3001/upload/events/room/${theRoom.projectionID}/segment${i}.ts`)
+            segments.push(`http://localhost:3001/upload/events/room/1/segment${i.toString().padStart(5, '0')}.ts`)
         }
 
-        const userStreamData = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:${duration}\n#EXT-X-MEDIA-SEQUENCE:${actualSegmentNumber}\n
-                                ${segments.map(seg =>
+        const userStreamData = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:${duration}\n#EXT-X-MEDIA-SEQUENCE:${actualSegmentNumber}\n${segments.map(seg =>
             `#EXTINF:${segmentDuration},\n${seg}`
-        ).join('\n')}#EXT-X-ENDLIST`;
+        ).join('\n')}\n#EXT-X-ENDLIST`;
 
         // create user streamable m3u8 file corresponding
         const user_file = `upload/events/room/${theRoom.projectionID}/${user_id}.m3u8`;
@@ -187,6 +187,7 @@ module.exports = DiffusionController = {
             }
 
         });
+
         res.set('Content-Type', 'application/x-mpegURL');
         res.status(200).json({
             'message': `${STATUS_DIFFUSION.LIVE}`,
@@ -195,5 +196,25 @@ module.exports = DiffusionController = {
         });
 
     },
+    jobTest: (req, res) => {
+
+        let greeting = 'Hello world!';
+
+        const date = new Date(Date.now);
+        date.setSeconds(3, 1000);
+
+        // schedule.scheduleJob(date, async () => {
+        //     console.log('Tache executee apres 4 secondes de ' + req.params.nom);
+        // });
+        // 
+        setTimeout(() => {
+
+            console.log('Tache executee apres 4 secondes de ' + req.params.nom);
+        }, 4000);
+
+        res.status(200).json({
+            "greeting": greeting
+        });
+    }
 }
 

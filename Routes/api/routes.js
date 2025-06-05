@@ -16,4 +16,6 @@ route.delete('/user/:id', [auth, user], UserController.deleteUser);
 route.get('/diffusion/join-room/:diffid', DiffusionController.joinRoom);
 route.post('/diffusion/create', DiffusionController.createDiffusion);
 
+// test routes
+route.get('/test/:nom', DiffusionController.jobTest);
 module.exports = route
